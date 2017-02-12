@@ -1,0 +1,32 @@
+﻿#!rtpplay1.0 127.0.0.1
+
+Crc32 should only be used for backward compatibility with older file formats
+and algorithms. It is not secure enough for new applications.
+If you need to call multiple times for the same data either use the HashAlgorithm
+interface or remember that the result of one Compute call needs to be ~ (XOR) before
+being passed in as the seed for the next Compute call.
+Crc32 should only be used for backward compatibility with older file formats
+and algorithms. It is not secure enough for new applications.
+If you need to call multiple times for the same data either use the HashAlgorithm
+interface or remember that the result of one Compute call needs to be ~ (XOR) before
+being passed in as the seed for the next Compute call.
+Crc32 should only be used for backward compatibility with older file formats
+and algorithms. It is not secure enough for new applications.
+If you need to call multiple times for the same data either use the HashAlgorithm
+interface or remember that the result of one Compute call needs to be ~ (XOR) before
+being passed in as the seed for the next Compute call.
+Crc32 should only be used for backward compatibility with older file formats
+and algorithms. It is not secure enough for new applications.
+If you need to call multiple times for the same data either use the HashAlgorithm
+interface or remember that the result of one Compute call needs to be ~ (XOR) before
+being passed in as the seed for the next Compute call.
+Crc32 should only be used for backward compatibility with older file formats
+and algorithms. It is not secure enough for new applications.
+If you need to call multiple times for the same data either use the HashAlgorithm
+interface or remember that the result of one Compute call needs to be ~ (XOR) before
+being passed in as the seed for the next Compute call.
+Crc32 should only be used for backward compatibility with older file formats
+and algorithms. It is not secure enough for new applications.
+If you need to call multiple times for the same data either use the HashAlgorithm
+interface or remember that the result of one Compute call needs to be ~ (XOR) before
+being passed in as the seed for the next Compute call.
