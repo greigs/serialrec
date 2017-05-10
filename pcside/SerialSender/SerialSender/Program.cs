@@ -37,7 +37,7 @@ namespace SerialSender
     /// </summary>
     public class Program
     {
-        static int bufferSize = 1024;
+        static int bufferSize = 16384;
         //static int hwBufferSize = 2048;
         private static int crcByteSize = 11;
         static double delayms = 0.001;
@@ -47,6 +47,7 @@ namespace SerialSender
         private static bool writeToSerial = true;
         private static bool writeToFile = false;
         private static string serialPortName = "COM3";
+        private static int sent = 0;
 
         static void Main()
         {
@@ -135,6 +136,14 @@ namespace SerialSender
             {
                 Console.WriteLine();
                 Console.WriteLine("Set " + set);
+                Console.WriteLine(sent + "K");
+                Console.WriteLine(sent + "K");
+                Console.WriteLine(sent + "K");
+                Console.WriteLine(sent + "K");
+                Console.WriteLine(sent + "K");
+                Console.WriteLine(sent + "K");
+                Console.WriteLine(sent + "K");
+                sent += (bufferSize / 1024);
                 set++;
                 byte[] standardInputBuffer = new byte[bufferSize];
 
@@ -218,7 +227,7 @@ namespace SerialSender
                 Console.WriteLine("Got READY, resending");
                 //Console.WriteLine(Encoding.ASCII.GetString(standardInputBuffer));
                 serial.Write(standardInputBuffer, 0, standardInputBuffer.Length);
-                Thread.Sleep(1000);
+                //Thread.Sleep(10);
                 while (serial.BytesToWrite > 0)
                 {
                     Thread.Sleep(1);
@@ -235,11 +244,9 @@ namespace SerialSender
         {
             if (serial.BytesToRead > 0)
             {
-                var read = ReadCharsAsASCII(serial, serial.BytesToRead);
-                if (read.Length > length)
-                {
-                    return read.Substring(read.Length - length - 1, length);
-                }
+                //var read = serial.ReadExisting();
+                var read = ReadCharsAsASCII(serial, length);
+                return read;
             }
 
             bool keepsending = true;
@@ -290,19 +297,66 @@ namespace SerialSender
 
         private static void ReadUntil(SerialPort serial, string matchString, string alreadyRead = null)
         {
-
+            var allMatch = false;
             var matchOnResult = matchString;
 
             if (alreadyRead != null)
             {
                 matchOnResult = CalculateRequiredMatch(matchString, alreadyRead);
+                if (alreadyRead.EndsWith("ERROR"))
+                {
+                    matchOnResult = matchString;
+                }
+                else if (matchOnResult == null)
+                {
+                    allMatch = true;
+                    return;
+                }
             }
-            
 
-            var allMatch = false;
+            if (serial.BytesToRead > 0)
+            {
+                var read = ReadCharsAsASCII(serial, serial.BytesToRead);
+                if (read.Length > matchOnResult.Length)
+                {
+                    matchOnResult = matchString;
+                }
+                if (read.EndsWith(matchString))
+                {
+                    return;
+                }
+            }
+
+            bool keepsending = true;
+            //var t = new Task(() =>
+            //{
+            //    while (keepsending)
+            //    {
+            //        for (int i = 0; i < 1; i++)
+            //        {
+            //            Thread.Sleep(TimeSpan.FromMilliseconds(1));
+            //            serial.Write("%IGNORE%");
+            //        }
+            //    }
+            //});
+            //t.Start();
+
             int charIndex = 0;
             while (!allMatch)
             {
+
+                if (serial.BytesToRead > 0)
+                {
+                    var read = serial.ReadExisting();
+                    if (read.Length > matchOnResult.Length)
+                    {
+                        matchOnResult = matchString;
+                    }
+                    if (read.EndsWith(matchString))
+                    {
+                        return;
+                    }
+                }
 
                 var data = (char) serial.ReadChar();
                 if (data == matchOnResult[charIndex])
@@ -314,13 +368,17 @@ namespace SerialSender
                     charIndex = 0;
                 }
 
-                if (charIndex == matchString.Length)
+                if (charIndex == matchOnResult.Length)
                 {
                     allMatch = true;
                     //Console.WriteLine("got %READY%");
                 }
             }
-            
+
+            keepsending = false;
+
+
+
 
         }
 
