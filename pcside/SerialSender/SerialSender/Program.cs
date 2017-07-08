@@ -37,10 +37,9 @@ namespace SerialSender
     /// </summary>
     public class Program
     {
-        static int bufferSize = 16384;
+        private static int bufferSize = 783; // 1044 encoded  //170;
         //static int hwBufferSize = 2048;
-        private static int crcByteSize = 11;
-        static double delayms = 0.001;
+        private static int crcByteSize = 12;
         private const string ReadyString = "%READY%";
         private static string clearHwBufferString;
         private static bool updateSettingsLiveEnabled = false;
@@ -51,6 +50,18 @@ namespace SerialSender
 
         static void Main()
         {
+
+            int largest = 0;
+            for (int i = 0; i < 12000; i++)
+            {
+                if (GetLengthOfBase64Bytes(i) == 1044)
+                {
+                    largest = i;
+                }
+            }
+
+
+
             StringBuilder sb = new StringBuilder();
             for (int i=0; i < 16; i++)
             {
@@ -77,7 +88,7 @@ namespace SerialSender
                 //RtsEnable = false,
                 //DiscardNull = false,
                 //ReadBufferSize = bufferSize,
-                WriteBufferSize = bufferSize,
+                WriteBufferSize = 128,
                 //Handshake = Handshake.XOnXOff,
                 //Parity = Parity.Even,
                 DataBits = 8,
@@ -127,61 +138,69 @@ namespace SerialSender
             FileStream outFileStream = null;
             if (writeToFile)
             {
-                outFileStream = File.Create("out.avi");
+                outFileStream = File.Create("out.txt");
             }
             bool first = true;
 
             int set = 0;
+
+            var lengthofBase64Normal = GetLengthOfBase64Bytes(bufferSize);
+            var lengthofBase64NormalPlusCrcSize = lengthofBase64Normal + crcByteSize;
+
+            
+            byte[] standardInputBuffer = new byte[bufferSize];
+            byte[] base64Bytes = new byte[lengthofBase64NormalPlusCrcSize];
+            char[] convertedChars = new char[lengthofBase64NormalPlusCrcSize];
+
             while (true)
             {
-                Console.WriteLine();
+                //Console.WriteLine();
                 Console.WriteLine("Set " + set);
-                Console.WriteLine(sent + "K");
-                Console.WriteLine(sent + "K");
-                Console.WriteLine(sent + "K");
-                Console.WriteLine(sent + "K");
-                Console.WriteLine(sent + "K");
-                Console.WriteLine(sent + "K");
-                Console.WriteLine(sent + "K");
+
                 sent += (bufferSize / 1024);
                 set++;
-                byte[] standardInputBuffer = new byte[bufferSize];
-
+                
                 if (first)
                 {
 
                     for (int i = 0; i < 10; i++)
                     {
                         Thread.Sleep(3);
-                        serial.Write("%IGNORE%");
+                        if (writeToSerial)
+                        {
+                            serial.Write("%IGNORE%");
+                        }
                     }
-                }
+                }                
+                inStream.Read(standardInputBuffer, 0, bufferSize);
 
-                inStream.Read(standardInputBuffer, 0, bufferSize - crcByteSize);
-                string str;
                 if (first)
                 {
-                    str = System.Text.Encoding.UTF8.GetString(standardInputBuffer).Substring(13);
                     first = false;
                 }
-                else
-                {
-                    str = System.Text.Encoding.UTF8.GetString(standardInputBuffer);
-                }
-                var len = str.Length - 11;
-                var bytes = System.Text.Encoding.UTF8.GetBytes(str);
 
-                var crc = CalculateCRC(bytes, len);
-                AddCrcToEndOfBuffer(standardInputBuffer, crc);
+                var lengthOfConverted = Convert.ToBase64CharArray(standardInputBuffer, 0, standardInputBuffer.Length, convertedChars, 0, Base64FormattingOptions.None);
+                System.Text.Encoding.UTF8.GetBytes(convertedChars, 0, convertedChars.Length, base64Bytes, 0);
+
+
+                var len = base64Bytes.Length - crcByteSize;
+                //var bytes = System.Text.Encoding.UTF8.GetBytes(str);
+                
+
+                var crc = CalculateCRC(base64Bytes, len);
+                //Console.WriteLine(crc);
+                AddCrcToEndOfBuffer(base64Bytes, crc);
+
+                //var str = System.Text.Encoding.UTF8.GetString(base64Bytes);
 
                 //Thread.Sleep(TimeSpan.FromMilliseconds(delayms));
                 if (writeToSerial)
                 {
                     // wait until we have the all clear
                     //ReadUntil(serial, ReadyString);
-                    Console.WriteLine("Waiting for READY");
+                    //Console.WriteLine("Waiting for READY");
                     ReadUntilWhileSendingIgnore(serial, "%READY%");
-                    Console.WriteLine("Got READY");
+                    //Console.WriteLine("Got READY");
 
 
                     //if (first)
@@ -191,53 +210,68 @@ namespace SerialSender
                     //    var valid = str.StartsWith("#!rtpplay1.0 127.0.0.1");
                     //    Console.WriteLine(valid ? "ok" : "bad");
                     //}
-                    WriteBytesToSerialWithRetry(serial, standardInputBuffer, crc);
+                    WriteBytesToSerialWithRetry(serial, base64Bytes, crc);
                     //Console.WriteLine("Response ok, waiting for next ready signal to continue");
                 }
                 if (writeToFile)
                 {
-                    outFileStream.Write(standardInputBuffer, 0, standardInputBuffer.Length);
+                    outFileStream.Write(base64Bytes, 0, base64Bytes.Length - 12);
                 }
             }
         }
 
-        private static void AddCrcToEndOfBuffer(byte[] standardInputBuffer, string crc)
+
+        private static int GetLengthOfBase64Bytes(int byteLength)
         {
-            var crcBytes = Encoding.ASCII.GetBytes(crc);
-            var offset = standardInputBuffer.Length - crcByteSize;
-            crcBytes.CopyTo(standardInputBuffer, offset);
+            char a = 'a';
+            List<byte> chars = new List<byte>();
+            for (int i = 0; i < byteLength; i++)
+            {
+                chars.Add((byte)a);
+            }
+
+            var str4 = Convert.ToBase64String(chars.ToArray());
+            return str4.Length;
         }
 
-        private static void WriteBytesToSerialWithRetry(SerialPort serial, byte[] standardInputBuffer, string crc)
+        private static void AddCrcToEndOfBuffer(byte[] buffer, string crc)
+        {
+            var crcBytes = Encoding.UTF8.GetBytes(crc);
+            var offset = buffer.Length - crcByteSize;
+            crcBytes.CopyTo(buffer, offset);
+        }
+
+        private static void WriteBytesToSerialWithRetry(SerialPort serial, byte[] buffer, string crc)
         {
             //Console.WriteLine(Encoding.ASCII.GetString(standardInputBuffer));
-            serial.Write(standardInputBuffer, 0, standardInputBuffer.Length);
+            serial.Write(buffer, 0, buffer.Length);
             while (serial.BytesToWrite > 0)
             {
                 Thread.Sleep(1);
             }
-            Console.WriteLine("Sent data, waiting for CRC response (sending ignores)");
+            //Console.WriteLine("Sent data, waiting for CRC response (sending ignores)");
             // await response
 
-            var response = SendIgnoreUntilResponse(serial, "7c5f0cc8 CRC OK%%%".Length);
+            var response = SendIgnoreUntilResponse(serial, "D8BD394B CRC OK!!!".Length);
             while (!ResponseIsOk("CRC" + response, crc))
             {
-                Console.WriteLine($"Response NOT ok ({response}), waiting for ready signal to retry");
+                //Console.WriteLine($"Response NOT ok ({response}), waiting for ready signal to retry");
                 ReadUntil(serial, ReadyString, response);
-                Console.WriteLine("Got READY, resending");
+                //Console.WriteLine("Got READY, resending");
                 //Console.WriteLine(Encoding.ASCII.GetString(standardInputBuffer));
-                serial.Write(standardInputBuffer, 0, standardInputBuffer.Length);
+                //var str = System.Text.Encoding.UTF8.GetString(buffer);
+
+                serial.Write(buffer, 0, buffer.Length);
                 //Thread.Sleep(10);
                 while (serial.BytesToWrite > 0)
                 {
                     Thread.Sleep(1);
                 }
-                Console.WriteLine("waiting for CRC response (sending ignores)");
-                response = SendIgnoreUntilResponse(serial, "7c5f0cc8 CRC OK%%%".Length);
+                //Console.WriteLine("waiting for CRC response (sending ignores)");
+                response = SendIgnoreUntilResponse(serial, "D8BD394B CRC OK!!!".Length);
             }
 
-            Console.WriteLine("Response OK");
-           
+            //Console.WriteLine("Response OK");
         }
 
         private static string SendIgnoreUntilResponse(SerialPort serial, int length)
@@ -252,11 +286,11 @@ namespace SerialSender
             bool keepsending = true;
             var t = new Task(() =>
             {
-                while (keepsending)
+                while (keepsending) 
                 {
                     for (int i = 0; i < 1; i++)
                     {
-                        Thread.Sleep(TimeSpan.FromMilliseconds(1));
+                        Thread.Sleep(TimeSpan.FromMilliseconds(5));
                         serial.Write("%IGNORE%");
                     }
                 }
@@ -277,9 +311,7 @@ namespace SerialSender
             {
                 ;
             }
-
-
-
+            
             keepsending = false;
             t.Wait();
             return response;
@@ -292,7 +324,7 @@ namespace SerialSender
                 
             }
 
-            return response.StartsWith(crc) && response.Contains("CRC OK!!!");
+            return response.Replace(":", string.Empty).StartsWith(crc.Replace(":", string.Empty)) && response.Contains("CRC OK!!!");
         }
 
         private static void ReadUntil(SerialPort serial, string matchString, string alreadyRead = null)
@@ -376,10 +408,7 @@ namespace SerialSender
             }
 
             keepsending = false;
-
-
-
-
+            
         }
 
         /// <summary>
@@ -558,7 +587,7 @@ namespace SerialSender
                 }
             };
 
-            return  "CRC" + hash;
+            return  "CRC:" + hash;
         }
 
         private static void UpdateSettings()
@@ -569,8 +598,7 @@ namespace SerialSender
                 var lines = File.ReadLines("settings.txt").ToArray();
                 var buffer = int.Parse(lines[0]);
                 bufferSize = buffer;
-                double delay = double.Parse(lines[1]);
-                delayms = delay;
+
             }
         }
 
