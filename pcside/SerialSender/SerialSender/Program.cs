@@ -143,9 +143,10 @@ namespace SerialSender
             bool first = true;
 
             int set = 0;
+            int crcCalcCount = 0;
 
             var lengthofBase64Normal = GetLengthOfBase64Bytes(bufferSize);
-            var lengthofBase64NormalPlusCrcSize = lengthofBase64Normal + crcByteSize;
+            var lengthofBase64NormalPlusCrcSize = lengthofBase64Normal + crcByteSize + 12;
 
             
             byte[] standardInputBuffer = new byte[bufferSize];
@@ -159,7 +160,10 @@ namespace SerialSender
 
                 sent += (bufferSize / 1024);
                 set++;
-                
+
+                crcCalcCount++;
+
+
                 if (first)
                 {
 
@@ -183,13 +187,13 @@ namespace SerialSender
                 System.Text.Encoding.UTF8.GetBytes(convertedChars, 0, convertedChars.Length, base64Bytes, 0);
 
 
-                var len = base64Bytes.Length - crcByteSize;
+                var len = base64Bytes.Length - crcByteSize - 12;
                 //var bytes = System.Text.Encoding.UTF8.GetBytes(str);
                 
 
                 var crc = CalculateCRC(base64Bytes, len);
                 //Console.WriteLine(crc);
-                AddCrcToEndOfBuffer(base64Bytes, crc);
+                AddCrcToEndOfBuffer(base64Bytes, crc, crcCalcCount);
 
                 //var str = System.Text.Encoding.UTF8.GetString(base64Bytes);
 
@@ -234,11 +238,16 @@ namespace SerialSender
             return str4.Length;
         }
 
-        private static void AddCrcToEndOfBuffer(byte[] buffer, string crc)
+        private static void AddCrcToEndOfBuffer(byte[] buffer, string crc, int calcCount)
         {
-            var crcBytes = Encoding.UTF8.GetBytes(crc);
-            var offset = buffer.Length - crcByteSize;
+            var crcBytes = Encoding.UTF8.GetBytes(crc + PadTo12(calcCount));
+            var offset = buffer.Length - crcByteSize - 12;
             crcBytes.CopyTo(buffer, offset);
+        }
+
+        private static string PadTo12(int i)
+        {
+            return i.ToString().PadRight(12,' ');
         }
 
         private static void WriteBytesToSerialWithRetry(SerialPort serial, byte[] buffer, string crc)
