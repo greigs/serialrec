@@ -261,8 +261,15 @@ namespace SerialSender
             // await response
 
             var response = SendIgnoreUntilResponse("D8BD394B CRC OK!!!".Length);
+            int tries = 0;
             while (!ResponseIsOk("CRC" + response, crc))
             {
+                tries++;
+
+                if (tries > 1)
+                {
+                    Console.WriteLine("Tries:" + tries);
+                }
                 //Console.WriteLine($"Response NOT ok ({response}), waiting for ready signal to retry");
                 ReadUntil(ReadyString, response);
                 //Console.WriteLine("Got READY, resending");
@@ -284,6 +291,9 @@ namespace SerialSender
 
         private static string SendIgnoreUntilResponse(int length)
         {
+            int numOK = 0;
+            int numErrors = 0;
+
             if (serial.BytesToRead > 0)
             {
                 //var read = serial.ReadExisting();
@@ -298,7 +308,7 @@ namespace SerialSender
                 {
                     for (int i = 0; i < 1; i++)
                     {
-                        Thread.Sleep(TimeSpan.FromMilliseconds(5));
+                        Thread.Sleep(TimeSpan.FromMilliseconds(0.5));
                         serial.Write("%IGNORE%");
                     }
                 }
@@ -308,26 +318,33 @@ namespace SerialSender
 
             if (response.Contains("OK"))
             {
-                
+                numOK++;
             }
 
             else if (response.Contains("CRC ERROR"))
             {
-
+                Console.WriteLine(response + ", Num OK: " + numOK);
+                numErrors++;
             }
             else
             {
-                ;
+                Console.WriteLine("Unknown Response");
             }
             
             keepsending = false;
             t.Wait();
+
+            if (numErrors == 0)
+            {
+                //Console.WriteLine("ALL OK");
+            }
+
             return response;
         }
 
         private static bool ResponseIsOk(string response, string crc)
         {
-            if (response != "CRC00000000 CRC ERROR")
+            if (response != "CRC00000000 CRC ERROR" && !response.Contains("CRC OK"))
             {
                 
             }
@@ -604,7 +621,7 @@ namespace SerialSender
                 {
                     for (int i = 0; i < 1; i++)
                     {
-                        Thread.Sleep(TimeSpan.FromMilliseconds(1));
+                        Thread.Sleep(TimeSpan.FromMilliseconds(0.5));
                         serial.Write("%IGNORE%");
                     }
                 }
