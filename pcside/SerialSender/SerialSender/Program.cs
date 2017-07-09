@@ -41,12 +41,16 @@ namespace SerialSender
         //static int hwBufferSize = 2048;
         private static int crcByteSize = 12;
         private const string ReadyString = "%READY%";
-        private static string clearHwBufferString;
         private static bool updateSettingsLiveEnabled = false;
         private static bool writeToSerial = true;
         private static bool writeToFile = false;
         private static string serialPortName = "COM3";
-        private static int sent = 0;
+        private static int sentBytes;
+        private static int sentKb;
+        private static SerialPort serial;
+        private static DateTime? TransferTimestamp;
+        private static int baudRate = 115200;
+
 
         static void Main()
         {
@@ -68,7 +72,6 @@ namespace SerialSender
                 sb.Append("3");
             }
 
-            clearHwBufferString = sb.ToString();
 
             Thread t = new Thread(UpdateSettings);
 
@@ -78,26 +81,7 @@ namespace SerialSender
             }
 
 
-            var serial = new SerialPort(serialPortName, 115200)
-            {
-                //
-                //ReadBufferSize = 2000,
-                //DiscardNull = true,Handshake = Handshake.None,
-                //DtrEnable = false,
-                Handshake = Handshake.None,
-                //RtsEnable = false,
-                //DiscardNull = false,
-                //ReadBufferSize = bufferSize,
-                WriteBufferSize = 128,
-                //Handshake = Handshake.XOnXOff,
-                //Parity = Parity.Even,
-                DataBits = 8,
-                StopBits = StopBits.One,
-                
-                //ReceivedBytesThreshold = bufferSize,
-                DtrEnable = false,
-                RtsEnable = false,
-            };
+            serial = CreateSerial();
 
             Stream inStream = GetStandardInputStream();
 
@@ -153,13 +137,28 @@ namespace SerialSender
             byte[] base64Bytes = new byte[lengthofBase64NormalPlusCrcSize];
             char[] convertedChars = new char[lengthofBase64NormalPlusCrcSize];
 
+            int lastAmountSent = 0;
+
             while (true)
             {
-                //Console.WriteLine();
-                Console.WriteLine("Set " + set);
+                if (!TransferTimestamp.HasValue)
+                {
+                    TransferTimestamp = DateTime.Now;
+                }
 
-                sent += (bufferSize / 1024);
+                //Console.WriteLine();
+                
+
+                sentBytes += bufferSize;
                 set++;
+
+                if (TransferTimestamp.Value.Add(TimeSpan.FromSeconds(1)) < DateTime.Now )
+                {
+                    Console.WriteLine("Transferred: " + sentBytes/1024 + "KB at "  + ((sentBytes / 1024) - sentKb ) + "KB/s");
+                    sentKb = sentBytes/1024;
+                    TransferTimestamp = DateTime.Now;
+                }
+                
 
                 crcCalcCount++;
 
@@ -214,7 +213,7 @@ namespace SerialSender
                     //    var valid = str.StartsWith("#!rtpplay1.0 127.0.0.1");
                     //    Console.WriteLine(valid ? "ok" : "bad");
                     //}
-                    WriteBytesToSerialWithRetry(serial, base64Bytes, crc);
+                    WriteBytesToSerialWithRetry(base64Bytes, crc);
                     //Console.WriteLine("Response ok, waiting for next ready signal to continue");
                 }
                 if (writeToFile)
@@ -250,7 +249,7 @@ namespace SerialSender
             return i.ToString().PadRight(12,' ');
         }
 
-        private static void WriteBytesToSerialWithRetry(SerialPort serial, byte[] buffer, string crc)
+        private static void WriteBytesToSerialWithRetry(byte[] buffer, string crc)
         {
             //Console.WriteLine(Encoding.ASCII.GetString(standardInputBuffer));
             serial.Write(buffer, 0, buffer.Length);
@@ -261,11 +260,11 @@ namespace SerialSender
             //Console.WriteLine("Sent data, waiting for CRC response (sending ignores)");
             // await response
 
-            var response = SendIgnoreUntilResponse(serial, "D8BD394B CRC OK!!!".Length);
+            var response = SendIgnoreUntilResponse("D8BD394B CRC OK!!!".Length);
             while (!ResponseIsOk("CRC" + response, crc))
             {
                 //Console.WriteLine($"Response NOT ok ({response}), waiting for ready signal to retry");
-                ReadUntil(serial, ReadyString, response);
+                ReadUntil(ReadyString, response);
                 //Console.WriteLine("Got READY, resending");
                 //Console.WriteLine(Encoding.ASCII.GetString(standardInputBuffer));
                 //var str = System.Text.Encoding.UTF8.GetString(buffer);
@@ -277,13 +276,13 @@ namespace SerialSender
                     Thread.Sleep(1);
                 }
                 //Console.WriteLine("waiting for CRC response (sending ignores)");
-                response = SendIgnoreUntilResponse(serial, "D8BD394B CRC OK!!!".Length);
+                response = SendIgnoreUntilResponse( "D8BD394B CRC OK!!!".Length);
             }
 
             //Console.WriteLine("Response OK");
         }
 
-        private static string SendIgnoreUntilResponse(SerialPort serial, int length)
+        private static string SendIgnoreUntilResponse(int length)
         {
             if (serial.BytesToRead > 0)
             {
@@ -336,7 +335,7 @@ namespace SerialSender
             return response.Replace(":", string.Empty).StartsWith(crc.Replace(":", string.Empty)) && response.Contains("CRC OK!!!");
         }
 
-        private static void ReadUntil(SerialPort serial, string matchString, string alreadyRead = null)
+        private static void ReadUntil(string matchString, string alreadyRead = null)
         {
             var allMatch = false;
             var matchOnResult = matchString;
@@ -399,25 +398,97 @@ namespace SerialSender
                     }
                 }
 
-                var data = (char) serial.ReadChar();
-                if (data == matchOnResult[charIndex])
+                bool readOne = false;
+                var numFailures = 0;
+                while (!readOne)
                 {
-                    charIndex++;
-                }
-                else
-                {
-                    charIndex = 0;
-                }
+                    if (serial.BytesToRead > 0)
+                    {
+                        var data = (char) serial.ReadChar();
+                        if (data == matchOnResult[charIndex])
+                        {
+                            charIndex++;
+                        }
+                        else
+                        {
+                            charIndex = 0;
+                        }
 
-                if (charIndex == matchOnResult.Length)
-                {
-                    allMatch = true;
-                    //Console.WriteLine("got %READY%");
+                        if (charIndex == matchOnResult.Length)
+                        {
+                            allMatch = true;
+                            //Console.WriteLine("got %READY%");
+                        }
+
+                        readOne = true;
+                    }
+                    else
+                    {
+                        numFailures++;
+                        Thread.Sleep(1);
+                        if (numFailures > 100)
+                        {
+                            ReInitialiseSerial();
+                            numFailures = 0;
+
+                            for (int i = 0; i< 100; i++)
+                            {
+                                serial.Write("%IGNORE%");
+                            }
+                            
+                        }
+
+                    }
                 }
             }
 
             keepsending = false;
             
+        }
+
+        private static void ReInitialiseSerial()
+        {
+            Console.WriteLine("Reinitialise");
+            serial.Close();
+            while (serial.IsOpen)
+            {
+                Thread.Sleep(10);
+            }
+            
+            serial.Dispose();
+            serial = CreateSerial();
+            
+            serial.Open();
+            while (!serial.IsOpen)
+            {
+                Thread.Sleep(10);
+            }
+            Console.WriteLine("Reinitialise Complete");
+
+        }
+
+        private static SerialPort CreateSerial()
+        {
+            return new SerialPort(serialPortName, baudRate)
+            {
+                //
+                //ReadBufferSize = 2000,
+                //DiscardNull = true,Handshake = Handshake.None,
+                //DtrEnable = false,
+                Handshake = Handshake.None,
+                //RtsEnable = false,
+                //DiscardNull = false,
+                //ReadBufferSize = bufferSize,
+                WriteBufferSize = 128,
+                //Handshake = Handshake.XOnXOff,
+                //Parity = Parity.Even,
+                DataBits = 8,
+                StopBits = StopBits.One,
+
+                //ReceivedBytesThreshold = bufferSize,
+                DtrEnable = false,
+                RtsEnable = false,
+            };
         }
 
         /// <summary>
