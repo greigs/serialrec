@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "SerialSenderNetCore": {
+      "commandName": "Project",
+      "commandLineArgs": "< bunny.avi",
+      "workingDirectory": "C:\\repo\\usb_serial_receive\\pcside\\SerialSenderNetCore\\SerialSenderNetCore\\bin\\Debug\\netcoreapp2.0"
+    }
+  }
+}
