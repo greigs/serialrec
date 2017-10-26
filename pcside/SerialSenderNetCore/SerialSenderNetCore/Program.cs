@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -49,29 +50,24 @@ namespace SerialSenderNetCore
         private static int sentKb;
         private static SerialPortStream  serial;
         private static DateTime? TransferTimestamp;
-        private static int baudRate = 115200;
-
+        private static int baudRate = 9600;
+        private static Stopwatch sw;
+        private static TimeSpan onemilli = TimeSpan.FromMilliseconds(1);
 
         static void Main()
         {
 
-            int largest = 0;
-            for (int i = 0; i < 12000; i++)
-            {
-                if (GetLengthOfBase64Bytes(i) == 1044)
-                {
-                    largest = i;
-                }
-            }
+            //int largest = 0;
+            //for (int i = 0; i < 12000; i++)
+            //{
+            //    if (GetLengthOfBase64Bytes(i) == 1044)
+            //    {
+            //        largest = i;
+            //    }
+            //}
 
-
-
-            StringBuilder sb = new StringBuilder();
-            for (int i=0; i < 16; i++)
-            {
-                sb.Append("3");
-            }
-
+            sw = new Stopwatch();
+            sw.Start();
 
             Thread t = new Thread(UpdateSettings);
 
@@ -105,7 +101,7 @@ namespace SerialSenderNetCore
                 //}
                 for (int i = 0; i < 10; i++)
                 {
-                    Thread.Sleep(3);
+                    Thread.Sleep(onemilli);
                     serial.Write("%IGNORE%");
                 }
 
@@ -130,7 +126,7 @@ namespace SerialSenderNetCore
             int crcCalcCount = 0;
 
             var lengthofBase64Normal = GetLengthOfBase64Bytes(bufferSize);
-            var lengthofBase64NormalPlusCrcSize = lengthofBase64Normal + crcByteSize + 12;
+            var lengthofBase64NormalPlusCrcSize = lengthofBase64Normal + crcByteSize + crcByteSize; // not sure why the extra!
 
             
             byte[] standardInputBuffer = new byte[bufferSize];
@@ -168,7 +164,7 @@ namespace SerialSenderNetCore
 
                     for (int i = 0; i < 10; i++)
                     {
-                        Thread.Sleep(3);
+                        Thread.Sleep(1);
                         if (writeToSerial)
                         {
                             serial.Write("%IGNORE%");
@@ -182,11 +178,11 @@ namespace SerialSenderNetCore
                     first = false;
                 }
 
-                var lengthOfConverted = Convert.ToBase64CharArray(standardInputBuffer, 0, standardInputBuffer.Length, convertedChars, 0, Base64FormattingOptions.None);
-                System.Text.Encoding.UTF8.GetBytes(convertedChars, 0, convertedChars.Length, base64Bytes, 0);
+                //var lengthOfConverted = Convert.ToBase64CharArray(standardInputBuffer, 0, standardInputBuffer.Length, convertedChars, 0, Base64FormattingOptions.None);
+                Encoding.UTF8.GetBytes(convertedChars, 0, convertedChars.Length, base64Bytes, 0);
 
 
-                var len = base64Bytes.Length - crcByteSize - 12;
+                var len = base64Bytes.Length - crcByteSize - crcByteSize; // again, not sure why two of these needed
                 //var bytes = System.Text.Encoding.UTF8.GetBytes(str);
                 
 
@@ -240,7 +236,7 @@ namespace SerialSenderNetCore
         private static void AddCrcToEndOfBuffer(byte[] buffer, string crc, int calcCount)
         {
             var crcBytes = Encoding.UTF8.GetBytes(crc + PadTo12(calcCount));
-            var offset = buffer.Length - crcByteSize - 12;
+            var offset = buffer.Length - crcByteSize - crcByteSize;
             crcBytes.CopyTo(buffer, offset);
         }
 
@@ -252,10 +248,10 @@ namespace SerialSenderNetCore
         private static void WriteBytesToSerialWithRetry(byte[] buffer, string crc)
         {
             //Console.WriteLine(Encoding.ASCII.GetString(standardInputBuffer));
-            serial.Write(buffer, 0, buffer.Length);
+            serial.WriteAsync(buffer, 0, buffer.Length).Wait(100);
             while (serial.BytesToWrite > 0)
             {
-                Thread.Sleep(1);
+                Thread.Sleep(onemilli);
             }
             //Console.WriteLine("Sent data, waiting for CRC response (sending ignores)");
             // await response
@@ -266,9 +262,10 @@ namespace SerialSenderNetCore
             {
                 tries++;
 
-                if (tries > 1)
+                if (tries > 10)
                 {
-                    Console.WriteLine("Tries:" + tries);
+                    //Console.WriteLine("Tries:" + tries);
+                    ReInitialiseSerial();
                 }
                 //Console.WriteLine($"Response NOT ok ({response}), waiting for ready signal to retry");
                 ReadUntil(ReadyString, response);
@@ -280,7 +277,7 @@ namespace SerialSenderNetCore
                 //Thread.Sleep(10);
                 while (serial.BytesToWrite > 0)
                 {
-                    Thread.Sleep(1);
+                    Thread.Sleep(onemilli);
                 }
                 //Console.WriteLine("waiting for CRC response (sending ignores)");
                 response = SendIgnoreUntilResponse( "D8BD394B CRC OK!!!".Length);
@@ -302,19 +299,19 @@ namespace SerialSenderNetCore
             }
 
             bool keepsending = true;
-            var t = new Task(() =>
-            {
-                while (keepsending) 
-                {
-                    for (int i = 0; i < 1; i++)
-                    {
-                        Thread.Sleep(TimeSpan.FromMilliseconds(0.5));
-                        serial.Write("%IGNORE%");
-                    }
-                }
-            });
-            t.Start();
-            var response = ReadCharsAsASCII(serial, length);
+            //var t = new Task(() =>
+            //{
+            //    while (keepsending) 
+            //    {
+            //        for (int i = 0; i < 1; i++)
+            //        {
+            //            Thread.Sleep(TimeSpan.FromMilliseconds(0.5));
+            //            serial.Write("%IGNORE%");
+            //        }
+            //    }
+            //});
+            //t.Start();
+            var response = ReadCharsAsASCII(serial, length, true);
 
             if (response.Contains("OK"))
             {
@@ -332,7 +329,7 @@ namespace SerialSenderNetCore
             }
             
             keepsending = false;
-            t.Wait();
+            //t.Wait();
 
             if (numErrors == 0)
             {
@@ -442,13 +439,13 @@ namespace SerialSenderNetCore
                     else
                     {
                         numFailures++;
-                        Thread.Sleep(10);
+                        Thread.Sleep(1);
                         if (numFailures > 10)
                         {
                             ReInitialiseSerial();
                             numFailures = 0;
 
-                            for (int i = 0; i< 100; i++)
+                            for (int i = 0; i< 1; i++)
                             {
                                 serial.Write("%IGNORE%");
                             }
@@ -465,11 +462,11 @@ namespace SerialSenderNetCore
 
         private static void ReInitialiseSerial()
         {
-            Console.WriteLine("Reinitialise");
+            //Console.WriteLine("Reinitialise");
             serial.Close();
             while (serial.IsOpen)
             {
-                Thread.Sleep(10);
+                Thread.Sleep(onemilli);
             }
             
             serial.Dispose();
@@ -478,10 +475,10 @@ namespace SerialSenderNetCore
             serial.Open();
             while (!serial.IsOpen)
             {
-                Thread.Sleep(10);
+                Thread.Sleep(onemilli);
             }
-            Console.WriteLine("Reinitialise Complete");
-
+            //Console.WriteLine("Reinitialise Complete");
+            GC.Collect();
         }
 
         private static SerialPortStream CreateSerial()
@@ -504,8 +501,8 @@ namespace SerialSenderNetCore
                 StopBits = StopBits.One,
 
                 //ReceivedBytesThreshold = bufferSize,
-                DtrEnable = false,
-                RtsEnable = false,
+                //DtrEnable = false,
+                //RtsEnable = true,
             };
         }
 
@@ -616,38 +613,38 @@ namespace SerialSenderNetCore
         {
 
             bool keepsending = true;
-            var t = new Task(() =>
-            {
-                while (keepsending)
-                {
-                    for (int i = 0; i < 1; i++)
-                    {
-                        Thread.Sleep(TimeSpan.FromMilliseconds(0.5));
-                        bool ok = false;
-                        while (!ok)
-                        {
-                            try
-                            {
-                                serial.Write("%IGNORE%");
-                                ok = true;
-                            }
-                            catch
-                            {
+            //var t = new Task(() =>
+            //{
+            //    while (keepsending)
+            //    {
+            //        for (int i = 0; i < 1; i++)
+            //        {
+            //            Thread.Sleep(TimeSpan.FromMilliseconds(0.1));
+            //            bool ok = false;
+            //            while (!ok)
+            //            {
+            //                try
+            //                {
+            //                    serial.Write("%IGNORE%");
+            //                    ok = true;
+            //                }
+            //                catch
+            //                {
 
-                            }
-                        }
-                    }
-                }
-            });
-            t.Start();
+            //                }
+            //            }
+            //        }
+            //    }
+            //});
+            //t.Start();
 
             var allMatch = false;
             int charIndex = 0;
+            byte[] singleByte = new byte[1];
             while (!allMatch)
             {
-
-                var data = (char)serial.ReadChar();
-                if (data == matchString[charIndex])
+                serial.ReadAsync(singleByte,0,1).Wait(100);
+                if ((char)singleByte[0] == matchString[charIndex])
                 {
                     charIndex++;
                 }
@@ -660,25 +657,38 @@ namespace SerialSenderNetCore
                 {
                     allMatch = true;
                     keepsending = false;
-                    t.Wait();
-
+                    //t.Wait();
                     //Console.WriteLine("got %READY%");
                 }
             }
         }
 
-        private static string ReadCharsAsASCII(SerialPortStream serial, int charsToRead)
+        private static string ReadCharsAsASCII(SerialPortStream serial, int charsToRead, bool sendIgnores = false)
         {
             
             byte[] buffer = new byte[charsToRead];
-            var tmp = ASCIIEncoding.UTF8.GetString(buffer);
+            var tmp = Encoding.UTF8.GetString(buffer);
             string stringResult = null;
             bool ok = false;
             while (!ok)
             {
-                serial.ReadAsync(buffer, 0, charsToRead).Wait(TimeSpan.FromSeconds(10));
+                bool finishedInTime = serial.ReadAsync(buffer, 0, charsToRead).Wait(TimeSpan.FromMilliseconds(50));
 
-                stringResult = ASCIIEncoding.UTF8.GetString(buffer);
+                if (!finishedInTime)
+                {
+                    if (sendIgnores)
+                    {
+                        for (int i = 0; i < 1; i++)
+                        {
+                            serial.Write("%IGNORE%");
+                            //Thread.Sleep(1);
+                        }
+                        
+                    }
+                    continue;
+                }
+
+                stringResult = Encoding.UTF8.GetString(buffer);
 
                 if (tmp != stringResult)
                 {
@@ -705,7 +715,7 @@ namespace SerialSenderNetCore
                 {
                     break;
                 }
-            };
+            }
 
             return  "CRC:" + hash;
         }
@@ -718,7 +728,6 @@ namespace SerialSenderNetCore
                 var lines = File.ReadLines("settings.txt").ToArray();
                 var buffer = int.Parse(lines[0]);
                 bufferSize = buffer;
-
             }
         }
 
