@@ -44,7 +44,7 @@ namespace SerialSender
         private static bool updateSettingsLiveEnabled = false;
         private static bool writeToSerial = true;
         private static bool writeToFile = false;
-        private static string serialPortName = "COM3";
+        private static string serialPortName = "COM5";
         private static int sentBytes;
         private static int sentKb;
         private static SerialPort serial;

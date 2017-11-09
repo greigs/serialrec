@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -53,6 +54,7 @@ namespace SerialSenderNetCore
         private static int baudRate = 9600;
         private static Stopwatch sw;
         private static TimeSpan onemilli = TimeSpan.FromMilliseconds(1);
+        private static bool keepsending = true;
 
         static void Main()
         {
@@ -137,86 +139,116 @@ namespace SerialSenderNetCore
 
             while (true)
             {
-                if (!TransferTimestamp.HasValue)
-                {
-                    TransferTimestamp = DateTime.Now;
-                }
-
-                //Console.WriteLine();
-                
-
-                sentBytes += bufferSize;
-                set++;
-
-                if (TransferTimestamp.Value.Add(TimeSpan.FromSeconds(1)) < DateTime.Now )
-                {
-                    Console.WriteLine("Transferred: " + sentBytes/1024 + "KB at "  + ((sentBytes / 1024) - sentKb ) + "KB/s");
-                    sentKb = sentBytes/1024;
-                    TransferTimestamp = DateTime.Now;
-                }
-                
-
-                crcCalcCount++;
-
-
-                if (first)
+                try
                 {
 
-                    for (int i = 0; i < 10; i++)
+                    if (!TransferTimestamp.HasValue)
                     {
-                        Thread.Sleep(1);
-                        if (writeToSerial)
+                        TransferTimestamp = DateTime.Now;
+                    }
+
+                    //Console.WriteLine();
+
+
+                    sentBytes += bufferSize;
+                    set++;
+
+                    if (TransferTimestamp.Value.Add(TimeSpan.FromSeconds(1)) < DateTime.Now)
+                    {
+                        Console.WriteLine(sw.Elapsed + "   Transferred: " + sentBytes / 1024 + "KB at " +
+                                          ((sentBytes / 1024) - sentKb) + "KB/s");
+                        sentKb = sentBytes / 1024;
+                        TransferTimestamp = DateTime.Now;
+                    }
+
+
+                    crcCalcCount++;
+
+
+                    if (first)
+                    {
+
+                        for (int i = 0; i < 10; i++)
                         {
-                            serial.Write("%IGNORE%");
+                            Thread.Sleep(1);
+                            if (writeToSerial)
+                            {
+                                serial.Write("%IGNORE%");
+                            }
                         }
                     }
-                }                
-                inStream.Read(standardInputBuffer, 0, bufferSize);
+                    inStream.Read(standardInputBuffer, 0, bufferSize);
 
-                if (first)
-                {
-                    first = false;
+                    if (first)
+                    {
+                        first = false;
+                    }
+
+                    var lengthOfConverted = Convert.ToBase64CharArray(standardInputBuffer, 0,
+                        standardInputBuffer.Length, convertedChars, 0, Base64FormattingOptions.None);
+                    Encoding.UTF8.GetBytes(convertedChars, 0, convertedChars.Length, base64Bytes, 0);
+
+
+                    var len = base64Bytes.Length - crcByteSize - crcByteSize; // again, not sure why two of these needed
+                    //var bytes = System.Text.Encoding.UTF8.GetBytes(str);
+
+
+                    var crc = CalculateCRC(base64Bytes, len);
+                    //Console.WriteLine(crc);
+                    AddCrcToEndOfBuffer(base64Bytes, crc, crcCalcCount);
+
+                    //var str = System.Text.Encoding.UTF8.GetString(base64Bytes);
+
+                    //Thread.Sleep(TimeSpan.FromMilliseconds(delayms));
+                    if (writeToSerial)
+                    {
+                        // wait until we have the all clear
+                        //ReadUntil(serial, ReadyString);
+                        //Console.WriteLine("Waiting for READY");
+
+                        var failCount = 0;
+                        var ok = false;
+                        while (!ok)
+                        {
+                            failCount++;
+                            if (failCount > 100)
+                            {
+                                throw new Exception();
+                            }
+                            try
+                            {
+                                ReadUntilWhileSendingIgnore(serial, "%READY%");
+                                ok = true;
+                            }
+                            catch (Exception ex)
+                            {
+                                ReInitialiseSerial();
+                            }
+                        }
+                        //Console.WriteLine("Got READY");
+
+
+                        //if (first)
+                        //{
+                        //    first = false;
+                        //    var str = System.Text.Encoding.UTF8.GetString(standardInputBuffer);
+                        //    var valid = str.StartsWith("#!rtpplay1.0 127.0.0.1");
+                        //    Console.WriteLine(valid ? "ok" : "bad");
+                        //}
+                        WriteBytesToSerialWithRetry(base64Bytes, crc);
+                        //Console.WriteLine("Response ok, waiting for next ready signal to continue");
+                    }
+                    if (writeToFile)
+                    {
+                        outFileStream.Write(base64Bytes, 0, base64Bytes.Length - 12);
+                    }
                 }
-
-                //var lengthOfConverted = Convert.ToBase64CharArray(standardInputBuffer, 0, standardInputBuffer.Length, convertedChars, 0, Base64FormattingOptions.None);
-                Encoding.UTF8.GetBytes(convertedChars, 0, convertedChars.Length, base64Bytes, 0);
-
-
-                var len = base64Bytes.Length - crcByteSize - crcByteSize; // again, not sure why two of these needed
-                //var bytes = System.Text.Encoding.UTF8.GetBytes(str);
-                
-
-                var crc = CalculateCRC(base64Bytes, len);
-                //Console.WriteLine(crc);
-                AddCrcToEndOfBuffer(base64Bytes, crc, crcCalcCount);
-
-                //var str = System.Text.Encoding.UTF8.GetString(base64Bytes);
-
-                //Thread.Sleep(TimeSpan.FromMilliseconds(delayms));
-                if (writeToSerial)
+                catch
                 {
-                    // wait until we have the all clear
-                    //ReadUntil(serial, ReadyString);
-                    //Console.WriteLine("Waiting for READY");
-                    ReadUntilWhileSendingIgnore(serial, "%READY%");
-                    //Console.WriteLine("Got READY");
 
-
-                    //if (first)
-                    //{
-                    //    first = false;
-                    //    var str = System.Text.Encoding.UTF8.GetString(standardInputBuffer);
-                    //    var valid = str.StartsWith("#!rtpplay1.0 127.0.0.1");
-                    //    Console.WriteLine(valid ? "ok" : "bad");
-                    //}
-                    WriteBytesToSerialWithRetry(base64Bytes, crc);
-                    //Console.WriteLine("Response ok, waiting for next ready signal to continue");
-                }
-                if (writeToFile)
-                {
-                    outFileStream.Write(base64Bytes, 0, base64Bytes.Length - 12);
                 }
             }
+
         }
 
 
@@ -298,7 +330,6 @@ namespace SerialSenderNetCore
                 return read;
             }
 
-            bool keepsending = true;
             //var t = new Task(() =>
             //{
             //    while (keepsending) 
@@ -316,11 +347,12 @@ namespace SerialSenderNetCore
             if (response.Contains("OK"))
             {
                 numOK++;
+                Console.Write('#');
             }
 
             else if (response.Contains("CRC ERROR"))
             {
-                Console.WriteLine(response + ", Num OK: " + numOK);
+                //Console.WriteLine(response + ", Num OK: " + numOK);
                 numErrors++;
             }
             else
@@ -328,7 +360,7 @@ namespace SerialSenderNetCore
                 Console.WriteLine("Unknown Response");
             }
             
-            keepsending = false;
+            //keepsending = false;
             //t.Wait();
 
             if (numErrors == 0)
@@ -381,7 +413,7 @@ namespace SerialSenderNetCore
                 }
             }
 
-            bool keepsending = true;
+            //bool keepsending = true;
             //var t = new Task(() =>
             //{
             //    while (keepsending)
@@ -414,6 +446,8 @@ namespace SerialSenderNetCore
 
                 bool readOne = false;
                 var numFailures = 0;
+                var numFailuresGlobal = 0;
+                var n = 0;
                 while (!readOne)
                 {
                     if (serial.BytesToRead > 0)
@@ -439,6 +473,7 @@ namespace SerialSenderNetCore
                     else
                     {
                         numFailures++;
+                        numFailuresGlobal++;
                         Thread.Sleep(1);
                         if (numFailures > 10)
                         {
@@ -452,11 +487,16 @@ namespace SerialSenderNetCore
                             
                         }
 
+                        if (numFailuresGlobal > 100)
+                        {
+                            throw new Exception();
+                        }
+
                     }
                 }
             }
 
-            keepsending = false;
+            //keepsending = false;
             
         }
 
@@ -477,8 +517,19 @@ namespace SerialSenderNetCore
             {
                 Thread.Sleep(onemilli);
             }
+            try
+            {
+                for (int index = 0; index < 100; index++)
+                {
+                    serial.Write("%IGNORE%");
+                }
+                
+
+            }
+            catch { }
+
             //Console.WriteLine("Reinitialise Complete");
-            GC.Collect();
+            //GC.Collect();
         }
 
         private static SerialPortStream CreateSerial()
@@ -611,56 +662,76 @@ namespace SerialSenderNetCore
 
         private static void ReadUntilWhileSendingIgnore(SerialPortStream serial, string matchString)
         {
-
-            bool keepsending = true;
-            //var t = new Task(() =>
-            //{
-            //    while (keepsending)
-            //    {
-            //        for (int i = 0; i < 1; i++)
-            //        {
-            //            Thread.Sleep(TimeSpan.FromMilliseconds(0.1));
-            //            bool ok = false;
-            //            while (!ok)
-            //            {
-            //                try
-            //                {
-            //                    serial.Write("%IGNORE%");
-            //                    ok = true;
-            //                }
-            //                catch
-            //                {
-
-            //                }
-            //            }
-            //        }
-            //    }
-            //});
-            //t.Start();
-
-            var allMatch = false;
-            int charIndex = 0;
-            byte[] singleByte = new byte[1];
-            while (!allMatch)
+            
+            try
             {
-                serial.ReadAsync(singleByte,0,1).Wait(100);
-                if ((char)singleByte[0] == matchString[charIndex])
+                var allMatch = false;
+                int charIndex = 0;
+                byte[] singleByte = new byte[1];
+                while (!allMatch)
                 {
-                    charIndex++;
-                }
-                else
-                {
-                    charIndex = 0;
-                }
+                    bool read = serial.ReadAsync(singleByte, 0, 1).Wait(100);
+                    if ((char) singleByte[0] == matchString[charIndex])
+                    {
+                        charIndex++;
+                    }
+                    else
+                    {
+                        charIndex = 0;
+                    }
 
-                if (charIndex == matchString.Length)
-                {
-                    allMatch = true;
-                    keepsending = false;
-                    //t.Wait();
-                    //Console.WriteLine("got %READY%");
+                    if (charIndex == matchString.Length)
+                    {
+                        allMatch = true;
+                        keepsending = false;
+                        //t.Wait();
+                        //Console.WriteLine("got %READY%");
+                    }
+
+                    if (!read)
+                    {
+                        var t = SendIgnoresThread(serial);
+                        t.Wait(TimeSpan.FromMilliseconds(10));
+                    }
                 }
             }
+            finally
+            {
+                var prevKeepSendingValue = keepsending;
+                keepsending = false;
+                var t = SendIgnoresThread(serial);
+                t.Wait(TimeSpan.FromMilliseconds(10));
+
+                keepsending = prevKeepSendingValue;
+            }
+        }
+
+        private static Task SendIgnoresThread(SerialPortStream serial)
+        {
+            var t = new Task(() =>
+            {
+                while (keepsending)
+                {
+                    for (int i = 0; i < 1; i++)
+                    {
+                        Thread.Sleep(TimeSpan.FromMilliseconds(0.1));
+                        bool ok = false;
+                        while (!ok)
+                        {
+                            try
+                            {
+                                serial.Write("%IGNORE%");
+                                ok = true;
+                            }
+                            catch
+                            {
+                            }
+                        }
+                    }
+                }
+            });
+            t.Start();
+            return t;
         }
 
         private static string ReadCharsAsASCII(SerialPortStream serial, int charsToRead, bool sendIgnores = false)
@@ -670,8 +741,10 @@ namespace SerialSenderNetCore
             var tmp = Encoding.UTF8.GetString(buffer);
             string stringResult = null;
             bool ok = false;
+            int failcount = 0;
             while (!ok)
             {
+                
                 bool finishedInTime = serial.ReadAsync(buffer, 0, charsToRead).Wait(TimeSpan.FromMilliseconds(50));
 
                 if (!finishedInTime)
@@ -680,10 +753,21 @@ namespace SerialSenderNetCore
                     {
                         for (int i = 0; i < 1; i++)
                         {
-                            serial.Write("%IGNORE%");
+                            try
+                            {
+                                serial.Write("%IGNORE%");
+                            }
+                            catch
+                            {
+                                failcount++;
+                                if (failcount > 100)
+                                {
+                                    throw new Exception();
+                                }
+                                Thread.Sleep(10);
+                            }
                             //Thread.Sleep(1);
                         }
-                        
                     }
                     continue;
                 }
