@@ -1,14 +1,20 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Ports;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Transactions;
 using DamienG.Security.Cryptography;
 using RJCP.IO.Ports;
+using Handshake = RJCP.IO.Ports.Handshake;
+using StopBits = RJCP.IO.Ports.StopBits;
+using ThreadState = System.Threading.ThreadState;
 
 namespace SerialSenderNetCore
 {
@@ -55,6 +61,7 @@ namespace SerialSenderNetCore
         private static Stopwatch sw;
         private static TimeSpan onemilli = TimeSpan.FromMilliseconds(1);
         private static bool keepsending = true;
+        private static string foundPort;
 
         static void Main()
         {
@@ -211,7 +218,7 @@ namespace SerialSenderNetCore
                         while (!ok)
                         {
                             failCount++;
-                            if (failCount > 100)
+                            if (failCount > 5)
                             {
                                 throw new Exception();
                             }
@@ -223,6 +230,10 @@ namespace SerialSenderNetCore
                             catch (Exception ex)
                             {
                                 ReInitialiseSerial();
+                                if (failCount > 5)
+                                {
+                                    throw new Exception();
+                                }
                             }
                         }
                         //Console.WriteLine("Got READY");
@@ -243,9 +254,26 @@ namespace SerialSenderNetCore
                         outFileStream.Write(base64Bytes, 0, base64Bytes.Length - 12);
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    var ok = false;
+                    while (!ok)
+                    {
+                        try
+                        {
+                            ReInitialiseSerial();
+                            ok = true;
+                        }
+                        catch (Exception ex2)
+                        {
+                            // something is _really_ wrong.
+                            Thread.Sleep(100);
+                        }
+                    }
 
+                    first = true;
+                    inStream = GetStandardInputStream();
+                    keepsending = true;
                 }
             }
 
@@ -281,9 +309,11 @@ namespace SerialSenderNetCore
         {
             //Console.WriteLine(Encoding.ASCII.GetString(standardInputBuffer));
             serial.WriteAsync(buffer, 0, buffer.Length).Wait(100);
+            int waitCount = 0;
             while (serial.BytesToWrite > 0)
             {
                 Thread.Sleep(onemilli);
+                waitCount++;
             }
             //Console.WriteLine("Sent data, waiting for CRC response (sending ignores)");
             // await response
@@ -298,6 +328,11 @@ namespace SerialSenderNetCore
                 {
                     //Console.WriteLine("Tries:" + tries);
                     ReInitialiseSerial();
+                }
+
+                if (tries > 20)
+                {
+                    throw new Exception();
                 }
                 //Console.WriteLine($"Response NOT ok ({response}), waiting for ready signal to retry");
                 ReadUntil(ReadyString, response);
@@ -375,7 +410,7 @@ namespace SerialSenderNetCore
         {
             if (response != "CRC00000000 CRC ERROR" && !response.Contains("CRC OK"))
             {
-                
+                Console.Write('b');
             }
 
             return response.Replace(":", string.Empty).StartsWith(crc.Replace(":", string.Empty)) && response.Contains("CRC OK!!!");
@@ -534,7 +569,12 @@ namespace SerialSenderNetCore
 
         private static SerialPortStream CreateSerial()
         {
-            return new SerialPortStream(serialPortName, baudRate)
+            if (foundPort == null)
+            {
+                foundPort = FindSerialPort();
+            }
+
+            return new SerialPortStream(foundPort, baudRate)
             {
                 //
                 //ReadBufferSize = 2000,
@@ -555,6 +595,13 @@ namespace SerialSenderNetCore
                 //DtrEnable = false,
                 //RtsEnable = true,
             };
+        }
+
+        private static string FindSerialPort()
+        {
+            var portNames = SerialPortStream.GetPortNames();
+            var portDescriptions = SerialPortStream.GetPortDescriptions();
+            return portNames.OrderByDescending(x => x).FirstOrDefault();
         }
 
         /// <summary>
@@ -668,9 +715,10 @@ namespace SerialSenderNetCore
                 var allMatch = false;
                 int charIndex = 0;
                 byte[] singleByte = new byte[1];
+                var failureCount = 0;
                 while (!allMatch)
                 {
-                    bool read = serial.ReadAsync(singleByte, 0, 1).Wait(100);
+                    bool read = serial.ReadAsync(singleByte, 0, 1).Wait(30);
                     if ((char) singleByte[0] == matchString[charIndex])
                     {
                         charIndex++;
@@ -690,8 +738,21 @@ namespace SerialSenderNetCore
 
                     if (!read)
                     {
-                        var t = SendIgnoresThread(serial);
+                        var cancellationSource = new CancellationTokenSource();
+                        var t = SendIgnoresThread(cancellationSource.Token);
                         t.Wait(TimeSpan.FromMilliseconds(10));
+                        cancellationSource.Cancel();
+                        t.Wait();
+
+                    }
+
+                    if (!allMatch)
+                    {
+                        failureCount++;
+                        if (failureCount > 500)
+                        {
+                            throw new Exception();
+                        }
                     }
                 }
             }
@@ -699,29 +760,34 @@ namespace SerialSenderNetCore
             {
                 var prevKeepSendingValue = keepsending;
                 keepsending = false;
-                var t = SendIgnoresThread(serial);
+                var cancellationSource = new CancellationTokenSource();
+                var t = SendIgnoresThread(cancellationSource.Token);
                 t.Wait(TimeSpan.FromMilliseconds(10));
-
+                cancellationSource.Cancel();
+                t.Wait();
                 keepsending = prevKeepSendingValue;
             }
         }
 
-        private static Task SendIgnoresThread(SerialPortStream serial)
+        private static Task SendIgnoresThread(CancellationToken cancellationToken)
         {
             var t = new Task(() =>
             {
-                while (keepsending)
+                while (keepsending && !cancellationToken.IsCancellationRequested)
                 {
                     for (int i = 0; i < 1; i++)
                     {
                         Thread.Sleep(TimeSpan.FromMilliseconds(0.1));
                         bool ok = false;
-                        while (!ok)
+                        while (!ok && !cancellationToken.IsCancellationRequested)
                         {
                             try
                             {
-                                serial.Write("%IGNORE%");
-                                ok = true;
+                                if (!serial.IsDisposed && serial.IsOpen)
+                                {
+                                    serial.Write("%IGNORE%");
+                                    ok = true;
+                                }
                             }
                             catch
                             {
@@ -729,7 +795,7 @@ namespace SerialSenderNetCore
                         }
                     }
                 }
-            });
+            },cancellationToken);
             t.Start();
             return t;
         }
@@ -756,11 +822,16 @@ namespace SerialSenderNetCore
                             try
                             {
                                 serial.Write("%IGNORE%");
+                                failcount++;
+                                if (failcount > 20)
+                                {
+                                    throw new Exception();
+                                }
                             }
                             catch
                             {
                                 failcount++;
-                                if (failcount > 100)
+                                if (failcount > 25)
                                 {
                                     throw new Exception();
                                 }
@@ -769,14 +840,15 @@ namespace SerialSenderNetCore
                             //Thread.Sleep(1);
                         }
                     }
-                    continue;
                 }
-
-                stringResult = Encoding.UTF8.GetString(buffer);
-
-                if (tmp != stringResult)
+                if (finishedInTime)
                 {
-                    ok = true;
+                    stringResult = Encoding.UTF8.GetString(buffer);
+
+                    if (tmp != stringResult)
+                    {
+                        ok = true;
+                    }
                 }
             }
             return stringResult;
@@ -818,8 +890,8 @@ namespace SerialSenderNetCore
         private static Stream GetStandardInputStream()
         {
 
-            return Console.OpenStandardInput(bufferSize);
-            //return File.OpenRead("C:\\repo\\rtptools\\rtptools-1.21\\Debug\\out.avi");
+            //return Console.OpenStandardInput(bufferSize);
+            return File.OpenRead("bunny.avi");
         }
 
     }
