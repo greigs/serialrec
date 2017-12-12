@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -88,7 +89,23 @@ namespace SerialSenderNetCore
 
             serial = CreateSerial();
 
-            Stream inStream = GetStandardInputStream();
+            Stream initFrameInputStream = GetInitFrameInputStream();
+            List<string> inputMessages = new List<string>();
+            for (int i = 0; i < 100000; i++)
+            {
+                inputMessages.Add("message" + i.ToString() + "what");
+            }
+            ConcurrentQueue<byte[]> messages = new ConcurrentQueue<byte[]>();
+
+            foreach (var inputMessage in inputMessages)
+            {
+                var messagesForQueue = PadToMessageOrSplit(System.Text.Encoding.UTF8.GetBytes(inputMessage));
+                foreach (var message in messagesForQueue)
+                {
+                    messages.Enqueue(message);
+                }
+            }
+
 
             if (writeToSerial)
             {
@@ -183,8 +200,24 @@ namespace SerialSenderNetCore
                                 serial.Write("%IGNORE%");
                             }
                         }
+                        initFrameInputStream.Read(standardInputBuffer, 0, bufferSize);
                     }
-                    inStream.Read(standardInputBuffer, 0, bufferSize);
+                    else
+                    {
+                        byte[] dequeuedBytes;
+                        if (messages.TryDequeue(out dequeuedBytes))
+                        {
+                            var outStr = Encoding.ASCII.GetString(dequeuedBytes, 0, dequeuedBytes.Length);
+                            //Console.WriteLine(outStr);
+                            dequeuedBytes.CopyTo(standardInputBuffer,0);
+                        }
+                        else
+                        {
+                            Console.WriteLine("COMPLETE!?");
+                            Console.ReadLine();
+                        }
+                    }
+                    
 
                     if (first)
                     {
@@ -272,14 +305,53 @@ namespace SerialSenderNetCore
                     }
 
                     first = true;
-                    inStream = GetStandardInputStream();
+                    initFrameInputStream = GetInitFrameInputStream();
                     keepsending = true;
                 }
             }
 
         }
 
+        private static IEnumerable<byte[]> PadToMessageOrSplit(byte[] bytes)
+        {
+            if (bytes.Length == bufferSize)
+            {
+                return new List<byte[]>
+                {
+                    bytes
+                };
+            }
+            if (bytes.Length < bufferSize)
+            {
+                var newBytes = new byte[bufferSize];
+                bytes.CopyTo(newBytes, 0);
+                return new List<byte[]>
+                {
+                    newBytes
+                };
+            }
+            else
+            {
+                // split
+                var output = new List<byte[]>();
+                int i = 0;
+                while (i < bytes.Length)
+                {
+                    var length = bytes.Length - i;
+                    if (length > bufferSize)
+                    {
+                        length = bufferSize;
+                    }
+                    var newBytes = new byte[bufferSize];
+                    Array.Copy(bytes,i,newBytes,0,length);
+                    output.Add(newBytes);
+                    i += length;
+                }
+                return output;
+            }
+        }
 
+     
         private static int GetLengthOfBase64Bytes(int byteLength)
         {
             char a = 'a';
@@ -324,7 +396,7 @@ namespace SerialSenderNetCore
             {
                 tries++;
 
-                if (tries > 10)
+                if (tries > 12)
                 {
                     //Console.WriteLine("Tries:" + tries);
                     ReInitialiseSerial();
@@ -887,7 +959,7 @@ namespace SerialSenderNetCore
             }
         }
 
-        private static Stream GetStandardInputStream()
+        private static Stream GetInitFrameInputStream()
         {
 
             //return Console.OpenStandardInput(bufferSize);
