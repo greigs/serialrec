@@ -15,4 +15,9 @@
     <PackageReference Include="SerialPortStream" Version="2.1.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\WindowWatcherCore\WindowWatcherCore.csproj" />
+    <ProjectReference Include="..\WindowWatcher\WindowWatcherMicrosoft.csproj" />
+  </ItemGroup>
+
 </Project>

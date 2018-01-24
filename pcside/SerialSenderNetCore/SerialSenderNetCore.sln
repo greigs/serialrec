@@ -1,20 +1,56 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
-VisualStudioVersion = 15.0.26730.8
+VisualStudioVersion = 15.0.27130.2003
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SerialSenderNetCore", "SerialSenderNetCore\SerialSenderNetCore.csproj", "{1F95AC3F-4B3D-4BD7-AF77-AE5CAE8F0BAF}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SerialSenderNetCore", "SerialSenderNetCore\SerialSenderNetCore.csproj", "{1F95AC3F-4B3D-4BD7-AF77-AE5CAE8F0BAF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WindowWatcherMicrosoft", "WindowWatcher\WindowWatcherMicrosoft.csproj", "{37DDD5A7-4F6B-43A0-8168-33038053F9C4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestNetCoreApp", "TestNetCoreApp\TestNetCoreApp.csproj", "{B31C063C-6728-406E-88CB-1344C40E58DA}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WindowWatcherCore", "WindowWatcherCore\WindowWatcherCore.csproj", "{319441F3-44DD-44F7-B6BB-556FEF4967BF}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
 		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{1F95AC3F-4B3D-4BD7-AF77-AE5CAE8F0BAF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{1F95AC3F-4B3D-4BD7-AF77-AE5CAE8F0BAF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1F95AC3F-4B3D-4BD7-AF77-AE5CAE8F0BAF}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{1F95AC3F-4B3D-4BD7-AF77-AE5CAE8F0BAF}.Debug|x64.Build.0 = Debug|Any CPU
 		{1F95AC3F-4B3D-4BD7-AF77-AE5CAE8F0BAF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1F95AC3F-4B3D-4BD7-AF77-AE5CAE8F0BAF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1F95AC3F-4B3D-4BD7-AF77-AE5CAE8F0BAF}.Release|x64.ActiveCfg = Release|Any CPU
+		{1F95AC3F-4B3D-4BD7-AF77-AE5CAE8F0BAF}.Release|x64.Build.0 = Release|Any CPU
+		{37DDD5A7-4F6B-43A0-8168-33038053F9C4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{37DDD5A7-4F6B-43A0-8168-33038053F9C4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{37DDD5A7-4F6B-43A0-8168-33038053F9C4}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{37DDD5A7-4F6B-43A0-8168-33038053F9C4}.Debug|x64.Build.0 = Debug|Any CPU
+		{37DDD5A7-4F6B-43A0-8168-33038053F9C4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{37DDD5A7-4F6B-43A0-8168-33038053F9C4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{37DDD5A7-4F6B-43A0-8168-33038053F9C4}.Release|x64.ActiveCfg = Release|Any CPU
+		{37DDD5A7-4F6B-43A0-8168-33038053F9C4}.Release|x64.Build.0 = Release|Any CPU
+		{B31C063C-6728-406E-88CB-1344C40E58DA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B31C063C-6728-406E-88CB-1344C40E58DA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B31C063C-6728-406E-88CB-1344C40E58DA}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B31C063C-6728-406E-88CB-1344C40E58DA}.Debug|x64.Build.0 = Debug|Any CPU
+		{B31C063C-6728-406E-88CB-1344C40E58DA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B31C063C-6728-406E-88CB-1344C40E58DA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B31C063C-6728-406E-88CB-1344C40E58DA}.Release|x64.ActiveCfg = Release|Any CPU
+		{B31C063C-6728-406E-88CB-1344C40E58DA}.Release|x64.Build.0 = Release|Any CPU
+		{319441F3-44DD-44F7-B6BB-556FEF4967BF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{319441F3-44DD-44F7-B6BB-556FEF4967BF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{319441F3-44DD-44F7-B6BB-556FEF4967BF}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{319441F3-44DD-44F7-B6BB-556FEF4967BF}.Debug|x64.Build.0 = Debug|Any CPU
+		{319441F3-44DD-44F7-B6BB-556FEF4967BF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{319441F3-44DD-44F7-B6BB-556FEF4967BF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{319441F3-44DD-44F7-B6BB-556FEF4967BF}.Release|x64.ActiveCfg = Release|Any CPU
+		{319441F3-44DD-44F7-B6BB-556FEF4967BF}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
