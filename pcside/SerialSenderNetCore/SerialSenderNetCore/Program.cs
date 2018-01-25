@@ -115,6 +115,8 @@ namespace SerialSenderNetCore
 
                     crcCalcCount++;
 
+                    var dequeued = false;
+
                     if (first)
                     {
                         for (int i = 0; i < 10; i++)
@@ -138,10 +140,11 @@ namespace SerialSenderNetCore
                         }
 
                         
-                        
+                     
                         if (applicationName != null)
                         {
                             Console.WriteLine("Dequeued:" + applicationName);
+                            dequeued = true;
                             var keysetId = MapApplicationToKeysetId(applicationName);
                             var commandBytesList = CreateCommandBytes(0, "switch_layout", keysetId);
                             foreach (var commandBytes in commandBytesList)
@@ -162,6 +165,10 @@ namespace SerialSenderNetCore
                     }
 
                     dw.WriteData(standardInputBuffer, crcCalcCount);
+                    if (dequeued)
+                    {
+                        Console.WriteLine("Sent");
+                    }
                 }
                 catch (Exception ex)
                 {
